@@ -1,0 +1,248 @@
+{% extends 'global_layout.html' %}
+{% load static %}
+
+{% block content_body %}
+<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+<link rel="stylesheet" type="text/css" href="{% static "css/theme.bootstrap_4.css" %}">
+<link rel="stylesheet" href="{% static "css/w3.css" %}">
+
+<style>
+  body {
+    overflow: visible;
+  }
+  .filter-label {
+    font-weight: bold;
+    color: #eee;
+  }
+  .form-control {
+    background-color: #2b3035;
+    color: #fff;
+    border: 1px solid #495057;
+  }
+  .form-control:focus {
+    background-color: #343a40;
+    color: #fff;
+  }
+  .table-wrapper {
+    margin-top: 20px;
+    overflow-x: auto;
+  }
+  .pagination-container {
+    margin-top: 15px;
+    text-align: center;
+  }
+</style>
+
+<div class="page-header" style="margin-bottom:0px; padding: 10px;">
+  <div class="container-fluid">
+    <h2 class="h5 no-margin-bottom">Audit Logs
+      <button id="exportCsvBtn" class="btn btn-secondary" style="float: right;" onclick="exportCSV()" disabled>Export CSV</button>
+    </h2>
+  </div>
+</div>
+
+<div class="container-fluid" style="margin-top: 15px;">
+  <!-- Filter form -->
+  <form id="filterForm" onsubmit="submitForm(event)">
+    <div class="row bg-dark p-3 rounded" style="border: 1px solid #444;">
+      <div class="col-md-4 col-sm-6 mb-3">
+        <label for="user" class="filter-label">User (Username/Email)</label>
+        <input type="text" class="form-control" id="user" placeholder="Search user...">
+      </div>
+      <div class="col-md-4 col-sm-6 mb-3">
+        <label for="accessTag" class="filter-label">Access Tag</label>
+        <input type="text" class="form-control" id="accessTag" placeholder="Search access tag...">
+      </div>
+      <div class="col-md-4 col-sm-6 mb-3">
+        <label for="status" class="filter-label">Status</label>
+        <select class="form-control" id="status">
+          <option value="">All</option>
+          <option value="Pending">Pending</option>
+          <option value="Approved">Approved</option>
+          <option value="Declined">Declined</option>
+          <option value="Revoked">Revoked</option>
+          <option value="GrantFailed">Grant Failed</option>
+          <option value="RevokeFailed">Revoke Failed</option>
+        </select>
+      </div>
+      <div class="col-md-4 col-sm-6 mb-3">
+        <label for="recordType" class="filter-label">Record Type</label>
+        <select class="form-control" id="recordType">
+          <option value="">All</option>
+          <option value="userAccess">User Access</option>
+          <option value="groupAccess">Group Access</option>
+          <option value="membership">Membership</option>
+        </select>
+      </div>
+      <div class="col-md-3 col-sm-6 mb-3">
+        <label for="dateFrom" class="filter-label">Date From</label>
+        <input type="date" class="form-control" id="dateFrom">
+      </div>
+      <div class="col-md-3 col-sm-6 mb-3">
+        <label for="dateTo" class="filter-label">Date To</label>
+        <input type="date" class="form-control" id="dateTo">
+      </div>
+      <div class="col-md-2 col-sm-12 d-flex align-items-end mb-3">
+        <button type="submit" class="btn btn-primary btn-block" style="height: calc(1.5em + .75rem + 2px);">Submit</button>
+      </div>
+    </div>
+  </form>
+
+  <!-- Error display -->
+  <div id="errorAlert" class="alert alert-danger mt-3" style="display: none;"></div>
+
+  <!-- Table results -->
+  <div class="table-wrapper">
+    <table class="table table-bordered table-striped">
+      <thead class="thead-dark">
+        <tr>
+          <th>Record Type</th>
+          <th>User</th>
+          <th>Access</th>
+          <th>Status</th>
+          <th>Requested On</th>
+          <th>Updated On</th>
+          <th>Actors</th>
+          <th>Reason</th>
+        </tr>
+      </thead>
+      <tbody id="tableData">
+        <tr>
+          <td colspan="8" class="text-center text-muted" id="empty-state-message">
+            Please configure filters and click Submit to fetch audit logs.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  <div class="pagination-container" id="paginationControls" style="display: none;">
+    <button onclick="decreasePagenum()" type="button" class="btn btn-primary prev" style="padding: 0px 30px;"><i class="small material-icons">navigate_before</i></button>
+    <span class="pagedisplay" id="pagedisplay" style="color: white; margin: 0 15px;">Page 1 of 1</span>
+    <button onclick="increasePagenum()" type="button" class="btn btn-primary next" style="padding: 0px 30px;"><i class="small material-icons">navigate_next</i></button>
+  </div>
+</div>
+
+<script>
+  var page_number = 1;
+  var hasSearched = false;
+
+  function decreasePagenum(){
+    if(page_number <= 1){
+      alert("Already on first page");
+    } else {
+      page_number -= 1;
+      updateTable();
+    }
+  }
+
+  function increasePagenum(){
+    page_number += 1;
+    updateTable();
+  }
+
+  function buildUrlFromParams(contentType) {
+    var reqParams = [];
+    
+    var user = $("#user").val().trim();
+    if(user) reqParams.push("user=" + encodeURIComponent(user));
+    
+    var accessTag = $("#accessTag").val().trim();
+    if(accessTag) reqParams.push("accessTag=" + encodeURIComponent(accessTag));
+    
+    var status = $("#status").val();
+    if(status) reqParams.push("status=" + encodeURIComponent(status));
+    
+    var recordType = $("#recordType").val();
+    if(recordType) reqParams.push("recordType=" + encodeURIComponent(recordType));
+    
+    var dateFrom = $("#dateFrom").val();
+    if(dateFrom) reqParams.push("dateFrom=" + encodeURIComponent(dateFrom));
+    
+    var dateTo = $("#dateTo").val();
+    if(dateTo) reqParams.push("dateTo=" + encodeURIComponent(dateTo));
+    
+    reqParams.push("responseType=" + encodeURIComponent(contentType));
+    reqParams.push("page=" + page_number);
+    
+    return "{% url 'auditLogs' %}?" + reqParams.join("&");
+  }
+
+  function exportCSV() {
+    if (!hasSearched) return;
+    var urlBuilder = buildUrlFromParams("csv");
+    window.location.href = urlBuilder;
+  }
+
+  function submitForm(event) {
+    if (event) event.preventDefault();
+    page_number = 1;
+    updateTable();
+  }
+
+  function updateTable() {
+    $("#errorAlert").hide().text("");
+    var urlBuilder = buildUrlFromParams("json");
+    
+    $.ajax({
+      url: urlBuilder,
+      method: "GET",
+      success: function(result){
+        hasSearched = true;
+        $("#exportCsvBtn").prop("disabled", false).removeClass("btn-secondary").addClass("btn-primary");
+        
+        var html_string = "";
+        var records = result["dataList"];
+        
+        if (records.length === 0) {
+          html_string = '<tr><td colspan="8" class="text-center text-muted">No audit records match your filters.</td></tr>';
+          $("#paginationControls").hide();
+        } else {
+          for (var i = 0; i < records.length; i++) {
+            var record = records[i];
+            html_string += "<tr>";
+            html_string += "<td>" + $("<div>").text(record["record_type"]).html() + "</td>";
+            html_string += "<td>" + $("<div>").text(record["user"]).html() + "</td>";
+            html_string += "<td>" + $("<div>").text(record["access"]).html() + "</td>";
+            html_string += "<td>" + $("<div>").text(record["status"]).html() + "</td>";
+            html_string += "<td>" + $("<div>").text(record["requested_on"]).html() + "</td>";
+            html_string += "<td>" + $("<div>").text(record["updated_on"]).html() + "</td>";
+            html_string += "<td>" + $("<div>").text(record["actors"]).html() + "</td>";
+            html_string += "<td>" + $("<div>").text(record["reason"]).html() + "</td>";
+            html_string += "</tr>";
+          }
+          
+          page_number = result['current_page'];
+          var last_page = result['last_page'];
+          $("#pagedisplay").text("Page " + page_number + " of " + last_page);
+          $("#paginationControls").show();
+          
+          // Disable next/prev buttons if boundaries reached
+          $(".prev").prop("disabled", page_number <= 1);
+          $(".next").prop("disabled", page_number >= last_page);
+        }
+        
+        $("#tableData").html(html_string);
+      },
+      error: function(xhr){
+        var errorMsg = "Error occurred while fetching data";
+        if (xhr.responseJSON && xhr.responseJSON.error) {
+          errorMsg = xhr.responseJSON.error;
+        }
+        $("#errorAlert").text(errorMsg).show();
+        $("#tableData").html('<tr><td colspan="8" class="text-center text-danger">Error: ' + errorMsg + '</td></tr>');
+        $("#paginationControls").hide();
+      }
+    });
+  }
+
+  jQuery(document).ready(function ($) {
+    setTimeout(function() {
+      if ($(".sidebar-toggle").length > 0) {
+        $(".sidebar-toggle")[0].click();
+      }
+    }, 10);
+  });
+</script>
+{% endblock %}

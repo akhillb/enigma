@@ -6,7 +6,9 @@ import traceback
 
 import csv
 from . import helpers as helper
-from .models import UserAccessMapping
+from .models import UserAccessMapping, GroupAccessMapping, MembershipV2
+from django.core.exceptions import ValidationError
+from django.db import models
 from bootprocess import general
 from Access.background_task_manager import background_task, accept_request
 
@@ -192,3 +194,249 @@ def get_generic_user_access_mapping(user_access_mapping):
         access_details = user_access_mapping.getAccessRequestDetails(access_module)
     logger.debug("Generic access generated: " + str(access_details))
     return access_details
+
+
+def get_audit_log_filters(request):
+    filters = {}
+    
+    user_query = request.GET.get('user', '').strip()
+    if user_query:
+        filters['user'] = user_query
+        
+    access_tag_query = request.GET.get('accessTag', '').strip()
+    if access_tag_query:
+        filters['accessTag'] = access_tag_query
+        
+    status = request.GET.get('status', '').strip()
+    if status:
+        filters['status'] = status
+        
+    record_type = request.GET.get('recordType', '').strip()
+    if record_type:
+        filters['recordType'] = record_type
+        
+    date_from_str = request.GET.get('dateFrom', '').strip()
+    if date_from_str:
+        try:
+            filters['dateFrom'] = datetime.datetime.strptime(date_from_str, "%Y-%m-%d").date()
+        except ValueError:
+            raise ValidationError("Invalid dateFrom format. Expected YYYY-MM-DD.")
+            
+    date_to_str = request.GET.get('dateTo', '').strip()
+    if date_to_str:
+        try:
+            filters['dateTo'] = datetime.datetime.strptime(date_to_str, "%Y-%m-%d").date()
+        except ValueError:
+            raise ValidationError("Invalid dateTo format. Expected YYYY-MM-DD.")
+            
+    return filters
+
+
+def get_audit_log_entries(filters):
+    record_type = filters.get('recordType')
+    entries = []
+    
+    # 1. UserAccessMapping
+    if not record_type or record_type == 'userAccess':
+        queryset = UserAccessMapping.objects.all().select_related(
+            'user_identity__user__user',
+            'access',
+            'approver_1__user',
+            'approver_2__user',
+            'revoker__user'
+        )
+        if 'user' in filters:
+            u = filters['user']
+            queryset = queryset.filter(
+                models.Q(user_identity__user__user__username__icontains=u) |
+                models.Q(user_identity__user__email__icontains=u)
+            )
+        if 'accessTag' in filters:
+            t = filters['accessTag']
+            queryset = queryset.filter(access__access_tag__icontains=t)
+        if 'status' in filters:
+            queryset = queryset.filter(status__iexact=filters['status'])
+        if 'dateFrom' in filters:
+            queryset = queryset.filter(requested_on__date__gte=filters['dateFrom'])
+        if 'dateTo' in filters:
+            queryset = queryset.filter(requested_on__date__lte=filters['dateTo'])
+            
+        for obj in queryset:
+            user_obj = obj.user_identity.user if obj.user_identity else None
+            user_str = f"{user_obj.user.username} ({user_obj.email})" if user_obj and user_obj.user else (user_obj.email if user_obj else "")
+            
+            access_label_str = ", ".join(f"{k}: {v}" for k, v in obj.access.access_label.items() if k != 'keySecret')
+            access_str = f"{obj.access.access_tag} ({access_label_str})" if access_label_str else obj.access.access_tag
+            
+            actors = []
+            if obj.approver_1:
+                actors.append(f"Approver 1: {obj.approver_1.user.username}")
+            if obj.approver_2:
+                actors.append(f"Approver 2: {obj.approver_2.user.username}")
+            if obj.revoker:
+                actors.append(f"Revoker: {obj.revoker.user.username}")
+            actors_str = ", ".join(actors)
+            
+            reason = obj.request_reason
+            if obj.decline_reason:
+                reason += f" (Declined: {obj.decline_reason})"
+            elif obj.fail_reason:
+                reason += f" (Failed: {obj.fail_reason})"
+                
+            entries.append({
+                'record_type': 'User Access',
+                'user': user_str,
+                'access': access_str,
+                'status': obj.status,
+                'requested_on': obj.requested_on,
+                'updated_on': obj.updated_on,
+                'actors': actors_str,
+                'reason': reason,
+            })
+            
+    # 2. GroupAccessMapping
+    if not record_type or record_type == 'groupAccess':
+        queryset = GroupAccessMapping.objects.all().select_related(
+            'group',
+            'requested_by__user',
+            'access',
+            'approver_1__user',
+            'approver_2__user',
+            'revoker__user'
+        )
+        if 'user' in filters:
+            u = filters['user']
+            queryset = queryset.filter(
+                models.Q(requested_by__user__username__icontains=u) |
+                models.Q(requested_by__email__icontains=u)
+            )
+        if 'accessTag' in filters:
+            t = filters['accessTag']
+            queryset = queryset.filter(access__access_tag__icontains=t)
+        if 'status' in filters:
+            queryset = queryset.filter(status__iexact=filters['status'])
+        if 'dateFrom' in filters:
+            queryset = queryset.filter(requested_on__date__gte=filters['dateFrom'])
+        if 'dateTo' in filters:
+            queryset = queryset.filter(requested_on__date__lte=filters['dateTo'])
+            
+        for obj in queryset:
+            user_obj = obj.requested_by
+            user_str = f"{user_obj.user.username} ({user_obj.email})" if user_obj and user_obj.user else (user_obj.email if user_obj else "")
+            
+            access_str = f"{obj.group.name} - {obj.access.access_tag}"
+            
+            actors = []
+            if obj.approver_1:
+                actors.append(f"Approver 1: {obj.approver_1.user.username}")
+            if obj.approver_2:
+                actors.append(f"Approver 2: {obj.approver_2.user.username}")
+            if obj.revoker:
+                actors.append(f"Revoker: {obj.revoker.user.username}")
+            actors_str = ", ".join(actors)
+            
+            reason = obj.request_reason
+            if obj.decline_reason:
+                reason += f" (Declined: {obj.decline_reason})"
+                
+            entries.append({
+                'record_type': 'Group Access',
+                'user': user_str,
+                'access': access_str,
+                'status': obj.status,
+                'requested_on': obj.requested_on,
+                'updated_on': obj.updated_on,
+                'actors': actors_str,
+                'reason': reason,
+            })
+            
+    # 3. MembershipV2
+    if (not record_type or record_type == 'membership') and 'accessTag' not in filters:
+        queryset = MembershipV2.objects.all().select_related(
+            'user__user',
+            'group',
+            'requested_by__user',
+            'approver__user'
+        )
+        if 'user' in filters:
+            u = filters['user']
+            queryset = queryset.filter(
+                models.Q(user__user__username__icontains=u) |
+                models.Q(user__email__icontains=u)
+            )
+        if 'status' in filters:
+            queryset = queryset.filter(status__iexact=filters['status'])
+        if 'dateFrom' in filters:
+            queryset = queryset.filter(requested_on__date__gte=filters['dateFrom'])
+        if 'dateTo' in filters:
+            queryset = queryset.filter(requested_on__date__lte=filters['dateTo'])
+            
+        for obj in queryset:
+            user_obj = obj.user
+            user_str = f"{user_obj.user.username} ({user_obj.email})" if user_obj and user_obj.user else (user_obj.email if user_obj else "")
+            
+            access_str = obj.group.name
+            
+            actors = []
+            if obj.approver:
+                actors.append(f"Approver: {obj.approver.user.username}")
+            actors_str = ", ".join(actors)
+            
+            reason = obj.reason or ""
+            if obj.decline_reason:
+                reason += f" (Declined: {obj.decline_reason})"
+                
+            entries.append({
+                'record_type': 'Membership',
+                'user': user_str,
+                'access': access_str,
+                'status': obj.status,
+                'requested_on': obj.requested_on,
+                'updated_on': obj.updated_on,
+                'actors': actors_str,
+                'reason': reason,
+            })
+            
+    entries.sort(key=lambda x: x['requested_on'], reverse=True)
+    return entries
+
+
+def gen_audit_logs_csv(data_list):
+    logger.debug("Processing Audit Logs CSV response")
+    response = HttpResponse(content_type="text/csv")
+    filename = (
+        "AuditLogs-"
+        + str(datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S"))
+        + ".csv"
+    )
+    response["Content-Disposition"] = 'attachment; filename="' + filename + '"'
+
+    writer = csv.writer(response)
+    writer.writerow(
+        [
+            "RecordType",
+            "User",
+            "Access",
+            "Status",
+            "RequestedOn",
+            "UpdatedOn",
+            "Actors",
+            "Reason",
+        ]
+    )
+    for data in data_list:
+        requested_on_str = data['requested_on'].strftime("%Y-%m-%d %H:%M:%S UTC") if isinstance(data['requested_on'], datetime.datetime) else str(data['requested_on'])
+        updated_on_str = data['updated_on'].strftime("%Y-%m-%d %H:%M:%S UTC") if isinstance(data['updated_on'], datetime.datetime) else str(data['updated_on'])
+        writer.writerow(
+            [
+                data["record_type"],
+                data["user"],
+                data["access"],
+                data["status"],
+                requested_on_str,
+                updated_on_str,
+                data["actors"],
+                data["reason"],
+            ]
+        )
+    return response

@@ -6,7 +6,7 @@ from Access.helpers import get_available_access_modules, getPossibleApproverPerm
 
 def add_variables_to_context(request):
     # Skip adding context variables in case of API request
-    if request.headers["Content-Type"] == "application/json":
+    if request.headers.get("Content-Type") == "application/json":
         return {}
 
     try:

@@ -5,7 +5,7 @@ from rest_framework.authentication import TokenAuthentication, BasicAuthenticati
 from rest_framework.decorators import api_view
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
-from django.core.paginator import Paginator
+from django.core.paginator import Paginator, EmptyPage
 from django.contrib.auth.models import User as djangoUser
 from django.http import JsonResponse
 from django.shortcuts import render
@@ -749,6 +749,59 @@ def revoke_group_access(request):
         logger.exception("Error while revoking group access %s" % (traceback.format_exc()))
         logger.debug("Something went wrong while revoking group access")
         return JsonResponse({"message": "Failed to revoke group Access"}, status=400)
+
+@login_required
+@user_admin_or_ops
+def audit_logs(request):
+    """
+    Audit logs view for Admin/Ops.
+    - Default page load: renders template with filters, no initial data.
+    - responseType=json: returns paginated list of entries.
+    - responseType=csv: returns CSV download of all entries matching filters.
+    """
+    import datetime
+    response_type = request.GET.get("responseType", "ui")
+    
+    if response_type == "ui":
+        return render(request, "EnigmaOps/auditLogs.html")
+        
+    try:
+        filters = views_helper.get_audit_log_filters(request)
+    except ValidationError as e:
+        return JsonResponse({"error": str(e.message if hasattr(e, 'message') else e)}, status=400)
+        
+    entries = views_helper.get_audit_log_entries(filters)
+    
+    if response_type == "csv":
+        return views_helper.gen_audit_logs_csv(entries)
+        
+    page = int(request.GET.get("page", 1))
+    paginator = Paginator(entries, 10)
+    
+    try:
+        paginated_entries = paginator.page(page)
+    except EmptyPage:
+        if page < 1:
+            paginated_entries = paginator.page(1)
+        else:
+            paginated_entries = paginator.page(paginator.num_pages)
+            
+    serialized_entries = []
+    for entry in paginated_entries.object_list:
+        serialized = entry.copy()
+        serialized['requested_on'] = entry['requested_on'].strftime("%Y-%m-%d %H:%M:%S UTC") if isinstance(entry['requested_on'], datetime.datetime) else str(entry['requested_on'])
+        serialized['updated_on'] = entry['updated_on'].strftime("%Y-%m-%d %H:%M:%S UTC") if isinstance(entry['updated_on'], datetime.datetime) else str(entry['updated_on'])
+        serialized_entries.append(serialized)
+        
+    context = {
+        "dataList": serialized_entries,
+        "current_page": paginated_entries.number,
+        "last_page": paginator.num_pages,
+        "total_count": paginator.count,
+    }
+    
+    return JsonResponse(context, status=200)
+
 
 def error_404(request, exception, template_name='404.html'):
         data = {}

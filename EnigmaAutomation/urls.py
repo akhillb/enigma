@@ -43,6 +43,7 @@ from Access.views import (
     individual_resolve,
     ignore_failure,
     resolve_bulk,
+    audit_logs,
 )
 from Access.helpers import get_available_access_modules
 
@@ -99,6 +100,7 @@ urlpatterns = [
     re_path(r"^resolve_bulk", resolve_bulk, name="resolve_bulk"),
     re_path(r"^ignore/(?P<selector>.*)$", ignore_failure, name="ignoreFailure"),
     re_path(r"^group/revokeAccess", revoke_group_access, name="revoke_group_access"),
+    re_path(r"^access/auditLogs$", audit_logs, name="auditLogs"),
 ]
 
 handler404 = 'Access.views.error_404'
