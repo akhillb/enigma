@@ -55,9 +55,18 @@ def test_get_audit_log_filters_empty_params(mocker):
             {"dateFrom": "2026-02-01", "dateTo": "2026-01-01"},
             "must not be after",
         ),
+        ({"status": "HACKED"}, "Invalid status"),
     ],
 )
 def test_get_audit_log_filters_invalid_input(mocker, params, message_fragment):
     with pytest.raises(InvalidAuditFilterError) as excinfo:
         get_audit_log_filters(_request_with(mocker, params))
     assert message_fragment in str(excinfo.value)
+
+
+def test_get_audit_log_filters_whitespace_only_dates(mocker):
+    filters = get_audit_log_filters(
+        _request_with(mocker, {"dateFrom": "   ", "dateTo": " "})
+    )
+    assert filters["date_from"] is None
+    assert filters["date_to"] is None
