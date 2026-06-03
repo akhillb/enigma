@@ -9,6 +9,7 @@ from Access.audit_logs_helper import (
     _normalize_user_access,
     _normalize_group_access,
     _normalize_membership,
+    gen_audit_logs_csv,
 )
 
 
@@ -244,3 +245,35 @@ def test_normalize_group_access_null_requested_by(mocker):
     entry = _normalize_group_access(mapping)
     assert entry["user"] == ""
     assert entry["actors"] == ""
+
+
+SAMPLE_ENTRY = {
+    "record_type": "User Access",
+    "user": "alice@example.com",
+    "access": "github_access (repo-enigma)",
+    "status": "Approved",
+    "requested_on": "2026-01-02 10:00:00",
+    "updated_on": "2026-01-03 11:00:00",
+    "actors": "boss1",
+    "reason": "need repo access",
+}
+
+CSV_HEADER = "RecordType,User,Access,Status,RequestedOn,UpdatedOn,Actors,Reason"
+
+
+def test_gen_audit_logs_csv_happy_path():
+    response = gen_audit_logs_csv([dict(SAMPLE_ENTRY)])
+    assert response["Content-Type"] == "text/csv"
+    assert 'attachment; filename="AuditLogs-' in response["Content-Disposition"]
+    rows = response.content.decode().strip().split("\r\n")
+    assert rows[0] == CSV_HEADER
+    assert rows[1] == (
+        "User Access,alice@example.com,github_access (repo-enigma),"
+        "Approved,2026-01-02 10:00:00,2026-01-03 11:00:00,boss1,need repo access"
+    )
+
+
+def test_gen_audit_logs_csv_empty_list_has_header_only():
+    response = gen_audit_logs_csv([])
+    rows = response.content.decode().strip().split("\r\n")
+    assert rows == [CSV_HEADER]

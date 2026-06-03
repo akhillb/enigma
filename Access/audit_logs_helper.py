@@ -212,3 +212,41 @@ def get_audit_log_entries(filters):
     # lexicographic sort == chronological; blank timestamps sort last.
     entries.sort(key=lambda entry: entry["requested_on"], reverse=True)
     return entries
+
+
+AUDIT_CSV_COLUMNS = (
+    "record_type",
+    "user",
+    "access",
+    "status",
+    "requested_on",
+    "updated_on",
+    "actors",
+    "reason",
+)
+
+
+def gen_audit_logs_csv(data_list):
+    response = HttpResponse(content_type="text/csv")
+    filename = (
+        "AuditLogs-"
+        + datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        + ".csv"
+    )
+    response["Content-Disposition"] = 'attachment; filename="' + filename + '"'
+    writer = csv.writer(response)
+    writer.writerow(
+        [
+            "RecordType",
+            "User",
+            "Access",
+            "Status",
+            "RequestedOn",
+            "UpdatedOn",
+            "Actors",
+            "Reason",
+        ]
+    )
+    for entry in data_list:
+        writer.writerow([entry[column] for column in AUDIT_CSV_COLUMNS])
+    return response
