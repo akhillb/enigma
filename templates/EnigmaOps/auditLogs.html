@@ -1,0 +1,204 @@
+{% extends 'global_layout.html' %}
+{% load static %}
+
+{% block content_body %}
+<style>
+  .audit-filter-label {
+    color: white;
+    margin-bottom: 2px;
+    display: block;
+  }
+  .audit-filter-field {
+    height: 32px;
+    width: 100%;
+  }
+</style>
+
+<div class="page-header" style="margin-bottom:0px; padding: 10px;">
+  <div class="container-fluid">
+    <h2 class="h5 no-margin-bottom">Audit Logs
+      <button id="export-csv-button" class="btn btn-primary" style="float: right;"
+              onclick="exportCSV()" disabled>Export current selection as CSV</button>
+    </h2>
+  </div>
+</div>
+
+<div class="container-fluid" style="padding: 10px;">
+  <form id="audit-filter-form" onsubmit="return submitFilters();">
+    <div class="form-row">
+      <div class="col-md-2">
+        <label class="audit-filter-label" for="user">User</label>
+        <input class="audit-filter-field" id="user" type="text" placeholder="Username or email">
+      </div>
+      <div class="col-md-2">
+        <label class="audit-filter-label" for="accessTag">Access Tag</label>
+        <input class="audit-filter-field" id="accessTag" type="text" placeholder="e.g. github">
+      </div>
+      <div class="col-md-2">
+        <label class="audit-filter-label" for="status">Status</label>
+        <select class="audit-filter-field" id="status">
+          <option value="">All</option>
+          {% for status in statuses %}
+          <option value="{{ status }}">{{ status }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="audit-filter-label" for="recordType">Record Type</label>
+        <select class="audit-filter-field" id="recordType">
+          <option value="">All</option>
+          {% for value, label in record_types %}
+          <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="audit-filter-label" for="dateFrom">From</label>
+        <input class="audit-filter-field" id="dateFrom" type="date">
+      </div>
+      <div class="col-md-2">
+        <label class="audit-filter-label" for="dateTo">To</label>
+        <input class="audit-filter-field" id="dateTo" type="date">
+      </div>
+    </div>
+    <div class="form-row" style="margin-top: 10px;">
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-primary">Submit</button>
+      </div>
+    </div>
+  </form>
+  <div id="audit-error" class="alert alert-danger" style="display: none; margin-top: 10px;"></div>
+</div>
+
+<div class="wrapper" style="overflow-x: auto; width: 100%;">
+  <table class="table table-bordered table-striped">
+    <thead class="thead-dark">
+      <tr style="text-align: center;">
+        <th>Record Type</th>
+        <th>User</th>
+        <th>Access</th>
+        <th>Status</th>
+        <th>Requested On</th>
+        <th>Last Updated</th>
+        <th>Actors</th>
+        <th>Reason</th>
+      </tr>
+    </thead>
+    <tfoot>
+      <tr>
+        <th colspan="8" style="padding:1%; text-align: center;">
+          <button onclick="decreasePagenum()" type="button" class="btn btn-primary"
+                  style="padding: 0px 30px;">&laquo; Prev</button>
+          <span id="pagedisplay">Submit filters to view audit logs</span>
+          <button onclick="increasePagenum()" type="button" class="btn btn-primary"
+                  style="padding: 0px 30px;">Next &raquo;</button>
+        </th>
+      </tr>
+    </tfoot>
+    <tbody id="tableData">
+      <tr>
+        <td colspan="8" class="text-center">No results yet. Set filters and press Submit.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+var page_number = 1;
+var last_page = 1;
+var has_searched = false;
+
+var FILTER_FIELD_IDS = ["user", "accessTag", "status", "recordType", "dateFrom", "dateTo"];
+var ENTRY_COLUMNS = ["record_type", "user", "access", "status",
+                     "requested_on", "updated_on", "actors", "reason"];
+
+function buildUrlFromParams(responseType) {
+  var params = [];
+  for (var i = 0; i < FILTER_FIELD_IDS.length; i++) {
+    var value = document.getElementById(FILTER_FIELD_IDS[i]).value;
+    if (value && value.trim().length) {
+      params.push(FILTER_FIELD_IDS[i] + "=" + encodeURIComponent(value.trim()));
+    }
+  }
+  params.push("responseType=" + responseType);
+  params.push("page=" + String(page_number));
+  return "auditLogs?" + params.join("&");
+}
+
+function renderRows(dataList) {
+  var tbody = $("#tableData");
+  tbody.empty();
+  if (!dataList.length) {
+    tbody.append(
+      $("<tr>").append(
+        $("<td>", {colspan: 8, "class": "text-center"})
+          .text("No audit records match your filters.")
+      )
+    );
+    return;
+  }
+  for (var i = 0; i < dataList.length; i++) {
+    var row = $("<tr>");
+    for (var j = 0; j < ENTRY_COLUMNS.length; j++) {
+      // .text() treats values as text, not HTML — keeps user data XSS-safe.
+      row.append($("<td>").text(dataList[i][ENTRY_COLUMNS[j]] || ""));
+    }
+    tbody.append(row);
+  }
+}
+
+function updateTable() {
+  $("#audit-error").hide();
+  $.ajax({
+    url: buildUrlFromParams("json"),
+    success: function(result) {
+      renderRows(result["dataList"]);
+      page_number = result["current_page"];
+      last_page = result["last_page"];
+      has_searched = true;
+      document.getElementById("export-csv-button").disabled = false;
+      $("#pagedisplay").text(
+        "Page " + String(result["current_page"]) + " of "
+        + String(result["last_page"]) + " (" + String(result["total_count"]) + " records)"
+      );
+    },
+    error: function(xhr) {
+      var message = "Error occurred while fetching audit logs.";
+      if (xhr.responseJSON && xhr.responseJSON.error) {
+        message = xhr.responseJSON.error;
+      }
+      $("#audit-error").text(message).show();
+    }
+  });
+}
+
+function submitFilters() {
+  page_number = 1;
+  updateTable();
+  return false;
+}
+
+function decreasePagenum() {
+  if (!has_searched || page_number <= 1) {
+    return;
+  }
+  page_number -= 1;
+  updateTable();
+}
+
+function increasePagenum() {
+  if (!has_searched || page_number >= last_page) {
+    return;
+  }
+  page_number += 1;
+  updateTable();
+}
+
+function exportCSV() {
+  if (!has_searched) {
+    return;
+  }
+  location.replace(buildUrlFromParams("csv"));
+}
+</script>
+{% endblock %}
