@@ -43,6 +43,7 @@ from Access.views import (
     individual_resolve,
     ignore_failure,
     resolve_bulk,
+    audit_logs,
 )
 from Access.helpers import get_available_access_modules
 
@@ -62,6 +63,7 @@ urlpatterns = [
     re_path(r"^group/dashboard/$", group_dashboard, name="groupDashboard"),
     re_path(r"^access/userAccesses$", all_user_access_list, name="allUserAccessList"),
     re_path(r"^access/usersList$", all_users_list, name="allUsersList"),
+    re_path(r"^access/auditLogs$", audit_logs, name="auditLogs"),
     re_path(r"^user/offboardUser$", user_offboarding, name="offboarding_user"),
     re_path(r"^access/requestAccess$", request_access, name="requestAccess"),
     re_path(r"^group/requestAccess$", group_access, name="groupRequestAccess"),

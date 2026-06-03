@@ -38,6 +38,7 @@ from Access.userlist_helper import (
 from Access.views_helper import render_error_message
 from EnigmaAutomation.settings import PERMISSION_CONSTANTS
 from . import helpers as helper
+from Access import audit_logs_helper
 from .decorators import user_admin_or_ops, authentication_classes, user_with_permission, user_any_approver
 
 INVALID_REQUEST_MESSAGE = "Error in request not found OR Invalid request type"
@@ -757,3 +758,49 @@ def error_404(request, exception, template_name='404.html'):
 def error_500(request, template_name='500.html'):
         data = {}
         return render(request,template_name,data)
+
+
+@login_required
+@user_admin_or_ops
+def audit_logs(request):
+    """Unified audit trail over user access, group access and membership
+    requests. Supports ui (default), json and csv response types.
+    """
+    response_type = request.GET.get("responseType", "ui")
+
+    if response_type == "ui":
+        return render(
+            request,
+            "EnigmaOps/auditLogs.html",
+            {
+                "statuses": audit_logs_helper.ALL_STATUSES,
+                "record_types": audit_logs_helper.RECORD_TYPE_CHOICES,
+            },
+        )
+
+    try:
+        filters = audit_logs_helper.get_audit_log_filters(request)
+    except audit_logs_helper.InvalidAuditFilterError as ex:
+        return JsonResponse({"error": str(ex)}, status=400)
+
+    entries = audit_logs_helper.get_audit_log_entries(filters)
+
+    if response_type == "csv":
+        return audit_logs_helper.gen_audit_logs_csv(data_list=entries)
+
+    try:
+        page = int(request.GET.get("page", 1))
+    except ValueError:
+        page = 1
+    paginator = Paginator(entries, 10)
+    page = max(1, min(page, paginator.num_pages))
+    page_obj = paginator.page(page)
+
+    return JsonResponse(
+        {
+            "dataList": list(page_obj),
+            "current_page": page,
+            "last_page": paginator.num_pages,
+            "total_count": paginator.count,
+        }
+    )
