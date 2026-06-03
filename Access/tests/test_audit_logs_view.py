@@ -83,6 +83,29 @@ def test_audit_logs_invalid_filter_returns_400(mocker):
     assert "dateFrom" in payload["error"]
 
 
+def test_audit_logs_entry_fetch_failure_returns_500(mocker):
+    mocker.patch(
+        "Access.views.audit_logs_helper.get_audit_log_filters", return_value={}
+    )
+    mocker.patch(
+        "Access.views.audit_logs_helper.get_audit_log_entries",
+        side_effect=Exception("DB down"),
+    )
+    request = _ops_request(mocker, {"responseType": "json"})
+    response = audit_logs(request)
+    assert response.status_code == 500
+    payload = json.loads(response.content)
+    assert payload["error"] == "Failed to fetch audit log entries."
+
+
+def test_audit_logs_unknown_response_type_returns_400(mocker):
+    request = _ops_request(mocker, {"responseType": "xml"})
+    response = audit_logs(request)
+    assert response.status_code == 400
+    payload = json.loads(response.content)
+    assert "responseType" in payload["error"]
+
+
 def test_audit_logs_csv_delegates_to_helper(mocker):
     mocker.patch(
         "Access.views.audit_logs_helper.get_audit_log_filters", return_value={}

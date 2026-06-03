@@ -12,6 +12,7 @@ from django.shortcuts import render
 
 from Access import views_helper
 from Access import group_helper
+from Access import audit_logs_helper
 from Access.accessrequest_helper import (
     get_request_access,
     get_grant_failed_requests,
@@ -38,7 +39,6 @@ from Access.userlist_helper import (
 from Access.views_helper import render_error_message
 from EnigmaAutomation.settings import PERMISSION_CONSTANTS
 from . import helpers as helper
-from Access import audit_logs_helper
 from .decorators import user_admin_or_ops, authentication_classes, user_with_permission, user_any_approver
 
 INVALID_REQUEST_MESSAGE = "Error in request not found OR Invalid request type"
@@ -768,6 +768,11 @@ def audit_logs(request):
     """
     response_type = request.GET.get("responseType", "ui")
 
+    if response_type not in ("ui", "json", "csv"):
+        return JsonResponse(
+            {"error": "Invalid responseType '%s'." % response_type}, status=400
+        )
+
     if response_type == "ui":
         return render(
             request,
@@ -783,7 +788,13 @@ def audit_logs(request):
     except audit_logs_helper.InvalidAuditFilterError as ex:
         return JsonResponse({"error": str(ex)}, status=400)
 
-    entries = audit_logs_helper.get_audit_log_entries(filters)
+    try:
+        entries = audit_logs_helper.get_audit_log_entries(filters)
+    except Exception:
+        logger.exception("Error fetching audit log entries")
+        return JsonResponse(
+            {"error": "Failed to fetch audit log entries."}, status=500
+        )
 
     if response_type == "csv":
         return audit_logs_helper.gen_audit_logs_csv(data_list=entries)
