@@ -133,7 +133,7 @@ function inputRegion(e) {
         <li><a href={% url 'allUserAccessList' %}><i class="fa fa-list-ul nav-icon"></i>User Access List</a></li>
         <li><a href={% url 'allUsersList' %}><i class="fa fa-list-ul nav-icon"></i>Users List</a></li>
         {% if request.user.is_superuser or is_ops %}
-        <li><a href={% url 'auditLogs' %}><i class="fa fa-history nav-icon"></i>Audit Logs</a></li>
+        <li><a href="{% url 'auditLogs' %}"><i class="fa fa-history nav-icon"></i>Audit Logs</a></li>
         {% endif %}
       </ul>
       {% endif %}
