@@ -34,10 +34,10 @@ def _parse_date(value, param_name):
         return None
     try:
         return datetime.datetime.strptime(value, "%Y-%m-%d").date()
-    except ValueError:
+    except ValueError as exc:
         raise InvalidAuditFilterError(
             "Invalid date for '%s'. Expected YYYY-MM-DD." % param_name
-        )
+        ) from exc
 
 
 def get_audit_log_filters(request):
