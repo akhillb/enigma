@@ -127,7 +127,7 @@ def test_get_audit_log_entries_record_type_restricts_models(mocker):
     filters = dict(EMPTY_FILTERS, record_type="membership")
     entries = get_audit_log_entries(filters)
     assert len(entries) == 1
-    membership_mock.assert_called_once()
+    membership_mock.assert_called_once_with(filters)
     user_mock.assert_not_called()
     group_mock.assert_not_called()
 
@@ -226,3 +226,21 @@ def test_normalize_membership(mocker):
     assert entry["access"] == "devs"
     assert entry["actors"] == "owner1"
     assert entry["reason"] == "not on team"
+
+
+def test_normalize_group_access_null_requested_by(mocker):
+    mapping = mocker.MagicMock()
+    mapping.group.name = "devs"
+    mapping.access.access_tag = "aws_access"
+    mapping.requested_by = None
+    mapping.status = "Pending"
+    mapping.requested_on = datetime.datetime(2026, 2, 1, 9, 0, 0)
+    mapping.updated_on = datetime.datetime(2026, 2, 1, 9, 0, 0)
+    mapping.approver_1 = None
+    mapping.approver_2 = None
+    mapping.revoker = None
+    mapping.request_reason = "team onboarding"
+    mapping.decline_reason = None
+    entry = _normalize_group_access(mapping)
+    assert entry["user"] == ""
+    assert entry["actors"] == ""

@@ -208,6 +208,7 @@ def get_audit_log_entries(filters):
     # Memberships carry no access tag, so an accessTag filter excludes them.
     if record_type in ("", RECORD_TYPE_MEMBERSHIP) and not filters["access_tag"]:
         entries.extend(_membership_entries(filters))
-    # Timestamps are ISO-like strings: lexicographic sort == chronological.
+    # _format_timestamp always yields "YYYY-MM-DD HH:MM:SS" or "":
+    # lexicographic sort == chronological; blank timestamps sort last.
     entries.sort(key=lambda entry: entry["requested_on"], reverse=True)
     return entries
