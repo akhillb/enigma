@@ -55,3 +55,81 @@ def parse_filters(get_params):
         "status": _validate_status(get_params.get("status")),
         "resource": (get_params.get("resource") or "").strip() or None,
     }
+
+
+def _email(related):
+    """Return related.email or '' for a possibly-None related User."""
+    return getattr(related, "email", "") or "" if related is not None else ""
+
+
+def _access_tag(access):
+    return getattr(access, "access_tag", "") or "" if access is not None else ""
+
+
+def _group_name(group):
+    return getattr(group, "name", "") or "" if group is not None else ""
+
+
+def _first_reason(*values):
+    """Return the first non-empty reason string."""
+    for value in values:
+        if value:
+            return value
+    return ""
+
+
+def map_user_access(obj):
+    identity_user = getattr(obj.user_identity, "user", None) if obj.user_identity else None
+    return {
+        "timestamp": obj.updated_on,
+        "actor": _email(identity_user),
+        "action": "User Access",
+        "status": obj.status,
+        "resource": _access_tag(obj.access),
+        "reason": _first_reason(obj.decline_reason, obj.fail_reason, obj.request_reason),
+        "approver": _email(obj.approver_1),
+        "source_type": "user_access",
+    }
+
+
+def map_membership(obj):
+    return {
+        "timestamp": obj.updated_on,
+        "actor": _email(obj.user),
+        "action": "Group Membership",
+        "status": obj.status,
+        "resource": _group_name(obj.group),
+        "reason": _first_reason(obj.decline_reason, obj.reason),
+        "approver": _email(obj.approver),
+        "source_type": "group_membership",
+    }
+
+
+def map_group(obj):
+    # GroupV2's resource is its own `name` field (not a related object).
+    return {
+        "timestamp": obj.updated_on,
+        "actor": _email(obj.requester),
+        "action": "Group Lifecycle",
+        "status": obj.status,
+        "resource": getattr(obj, "name", "") or "",
+        "reason": _first_reason(obj.decline_reason),
+        "approver": _email(obj.approver),
+        "source_type": "group_lifecycle",
+    }
+
+
+def map_group_access(obj):
+    group = _group_name(obj.group)
+    access = _access_tag(obj.access)
+    resource = " / ".join([part for part in (group, access) if part])
+    return {
+        "timestamp": obj.updated_on,
+        "actor": _email(obj.requested_by),
+        "action": "Group Access",
+        "status": obj.status,
+        "resource": resource,
+        "reason": _first_reason(obj.decline_reason, obj.request_reason),
+        "approver": _email(obj.approver_1),
+        "source_type": "group_access",
+    }
