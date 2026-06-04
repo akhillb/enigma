@@ -193,3 +193,30 @@ def build_audit_entries(filters):
             entries.append(source["mapper"](obj))
     entries.sort(key=lambda entry: entry["timestamp"], reverse=True)
     return entries
+
+
+CSV_HEADER = ["Timestamp", "Actor", "Action", "Status", "Resource", "Approver", "Reason"]
+
+
+def gen_audit_logs_csv(entries):
+    """Render the (already filtered) entries as a downloadable CSV response."""
+    response = HttpResponse(content_type="text/csv")
+    filename = "AuditLogs-" + datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S") + ".csv"
+    response["Content-Disposition"] = 'attachment; filename="' + filename + '"'
+
+    writer = csv.writer(response)
+    writer.writerow(CSV_HEADER)
+    for entry in entries:
+        timestamp = entry["timestamp"]
+        writer.writerow(
+            [
+                timestamp.strftime("%Y-%m-%d %H:%M:%S") if timestamp else "",
+                entry["actor"],
+                entry["action"],
+                entry["status"],
+                entry["resource"],
+                entry["approver"],
+                entry["reason"],
+            ]
+        )
+    return response

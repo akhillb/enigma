@@ -189,3 +189,43 @@ def test_build_audit_entries_pushes_filters_to_each_source(mocker):
         status="Approved",
         access__access_tag__icontains="aws",
     )
+
+
+def _sample_entry(**overrides):
+    base = {
+        "timestamp": datetime.datetime(2026, 1, 5, 10, 30, 0),
+        "actor": "alice@example.com", "action": "User Access",
+        "status": "Approved", "resource": "aws-prod",
+        "approver": "boss@example.com", "reason": "need, it",
+        "source_type": "user_access",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_gen_audit_logs_csv_headers_and_type():
+    response = audit_helper.gen_audit_logs_csv([_sample_entry()])
+    assert response["Content-Type"] == "text/csv"
+    assert "attachment; filename=" in response["Content-Disposition"]
+    body = response.content.decode("utf-8")
+    lines = body.splitlines()
+    assert lines[0] == "Timestamp,Actor,Action,Status,Resource,Approver,Reason"
+
+
+def test_gen_audit_logs_csv_escapes_commas_in_reason():
+    response = audit_helper.gen_audit_logs_csv([_sample_entry(reason="need, it")])
+    body = response.content.decode("utf-8")
+    assert '"need, it"' in body
+    assert "2026-01-05 10:30:00" in body
+
+
+def test_gen_audit_logs_csv_empty_list_is_header_only():
+    response = audit_helper.gen_audit_logs_csv([])
+    body = response.content.decode("utf-8").strip()
+    assert body == "Timestamp,Actor,Action,Status,Resource,Approver,Reason"
+
+
+def test_gen_audit_logs_csv_handles_missing_timestamp():
+    response = audit_helper.gen_audit_logs_csv([_sample_entry(timestamp=None)])
+    body = response.content.decode("utf-8").splitlines()
+    assert body[1].startswith(",")  # empty timestamp cell
