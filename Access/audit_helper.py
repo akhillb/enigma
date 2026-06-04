@@ -133,3 +133,63 @@ def map_group_access(obj):
         "approver": _email(obj.approver_1),
         "source_type": "group_access",
     }
+
+
+# Each source declares the ORM paths used to push filters to the DB.
+SOURCES = (
+    {
+        "model": UserAccessMapping,
+        "timestamp_field": "updated_on",
+        "actor_path": "user_identity__user__email",
+        "resource_path": "access__access_tag",
+        "mapper": map_user_access,
+    },
+    {
+        "model": MembershipV2,
+        "timestamp_field": "updated_on",
+        "actor_path": "user__email",
+        "resource_path": "group__name",
+        "mapper": map_membership,
+    },
+    {
+        "model": GroupV2,
+        "timestamp_field": "updated_on",
+        "actor_path": "requester__email",
+        "resource_path": "name",
+        "mapper": map_group,
+    },
+    {
+        "model": GroupAccessMapping,
+        "timestamp_field": "updated_on",
+        "actor_path": "requested_by__email",
+        "resource_path": "group__name",
+        "mapper": map_group_access,
+    },
+)
+
+
+def _orm_filters(source, filters):
+    orm = {}
+    ts = source["timestamp_field"]
+    if filters["date_from"]:
+        orm[ts + "__date__gte"] = filters["date_from"]
+    if filters["date_to"]:
+        orm[ts + "__date__lte"] = filters["date_to"]
+    if filters["actor"]:
+        orm[source["actor_path"] + "__icontains"] = filters["actor"]
+    if filters["status"]:
+        orm["status"] = filters["status"]
+    if filters["resource"]:
+        orm[source["resource_path"] + "__icontains"] = filters["resource"]
+    return orm
+
+
+def build_audit_entries(filters):
+    """Query every source with pushed-down filters, normalize, merge, sort desc."""
+    entries = []
+    for source in SOURCES:
+        orm = _orm_filters(source, filters)
+        for obj in source["model"].objects.filter(**orm):
+            entries.append(source["mapper"](obj))
+    entries.sort(key=lambda entry: entry["timestamp"], reverse=True)
+    return entries

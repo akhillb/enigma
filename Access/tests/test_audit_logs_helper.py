@@ -137,3 +137,55 @@ def test_map_group_access():
     assert entry["actor"] == "dan@example.com"
     assert entry["resource"] == "ops / gcp-read"
     assert entry["source_type"] == "group_access"
+
+
+def _patch_all_sources(mocker, ua=None, mem=None, grp=None, ga=None):
+    mocker.patch.object(audit_helper.UserAccessMapping.objects, "filter",
+                        return_value=ua or [])
+    mocker.patch.object(audit_helper.MembershipV2.objects, "filter",
+                        return_value=mem or [])
+    mocker.patch.object(audit_helper.GroupV2.objects, "filter",
+                        return_value=grp or [])
+    mocker.patch.object(audit_helper.GroupAccessMapping.objects, "filter",
+                        return_value=ga or [])
+
+
+def test_build_audit_entries_merges_and_sorts_desc(mocker):
+    ua = _ns(updated_on=datetime.datetime(2026, 1, 1), user_identity=None,
+             access=None, status="Approved", request_reason="", decline_reason=None,
+             fail_reason=None, approver_1=None)
+    mem = _ns(updated_on=datetime.datetime(2026, 3, 1), user=None, group=None,
+              status="Approved", reason="", decline_reason=None, approver=None)
+    _patch_all_sources(mocker, ua=[ua], mem=[mem])
+
+    entries = audit_helper.build_audit_entries(audit_helper.parse_filters({}))
+
+    assert [e["source_type"] for e in entries] == ["group_membership", "user_access"]
+    assert entries[0]["timestamp"] > entries[1]["timestamp"]
+
+
+def test_build_audit_entries_no_match_returns_empty(mocker):
+    _patch_all_sources(mocker)
+    assert audit_helper.build_audit_entries(audit_helper.parse_filters({})) == []
+
+
+def test_build_audit_entries_pushes_filters_to_each_source(mocker):
+    ua_filter = mocker.patch.object(audit_helper.UserAccessMapping.objects, "filter",
+                                    return_value=[])
+    mocker.patch.object(audit_helper.MembershipV2.objects, "filter", return_value=[])
+    mocker.patch.object(audit_helper.GroupV2.objects, "filter", return_value=[])
+    mocker.patch.object(audit_helper.GroupAccessMapping.objects, "filter",
+                        return_value=[])
+
+    filters = audit_helper.parse_filters(
+        {"dateFrom": "2026-01-01", "actor": "alice", "status": "Approved",
+         "resource": "aws"}
+    )
+    audit_helper.build_audit_entries(filters)
+
+    ua_filter.assert_called_once_with(
+        updated_on__date__gte=datetime.date(2026, 1, 1),
+        user_identity__user__email__icontains="alice",
+        status="Approved",
+        access__access_tag__icontains="aws",
+    )
