@@ -40,7 +40,7 @@
       <div>
         <button type="submit" class="btn btn-primary">Apply filters</button>
         <a href="{% url 'auditLogs' %}" class="btn btn-secondary">Reset</a>
-        <a href="?{{ base_qs }}{% if base_qs %}&{% endif %}responseType=csv"
+        <a href="?{{ base_qs }}{% if base_qs %}&amp;{% endif %}responseType=csv"
            class="btn btn-success">Export CSV</a>
       </div>
     </fieldset>
@@ -84,13 +84,13 @@
   <nav aria-label="Audit log pages">
     <ul class="pagination">
       <li class="page-item {% if current_page <= 1 %}disabled{% endif %}">
-        <a class="page-link" href="?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ current_page|add:'-1' }}">Previous</a>
+        <a class="page-link" href="?{{ base_qs }}{% if base_qs %}&amp;{% endif %}page={{ current_page|add:'-1' }}">Previous</a>
       </li>
       <li class="page-item disabled">
         <span class="page-link">Page {{ current_page }} of {{ last_page }}</span>
       </li>
       <li class="page-item {% if current_page >= last_page %}disabled{% endif %}">
-        <a class="page-link" href="?{{ base_qs }}{% if base_qs %}&{% endif %}page={{ current_page|add:'1' }}">Next</a>
+        <a class="page-link" href="?{{ base_qs }}{% if base_qs %}&amp;{% endif %}page={{ current_page|add:'1' }}">Next</a>
       </li>
     </ul>
   </nav>
