@@ -79,6 +79,7 @@ def _first_reason(*values):
 
 
 def map_user_access(obj):
+    """Normalize a UserAccessMapping row to a common audit entry dict."""
     identity_user = getattr(obj.user_identity, "user", None) if obj.user_identity else None
     return {
         "timestamp": obj.updated_on,
@@ -93,6 +94,7 @@ def map_user_access(obj):
 
 
 def map_membership(obj):
+    """Normalize a MembershipV2 row to a common audit entry dict."""
     return {
         "timestamp": obj.updated_on,
         "actor": _email(obj.user),
@@ -106,6 +108,7 @@ def map_membership(obj):
 
 
 def map_group(obj):
+    """Normalize a GroupV2 row to a common audit entry dict."""
     # GroupV2's resource is its own `name` field (not a related object).
     return {
         "timestamp": obj.updated_on,
@@ -120,6 +123,7 @@ def map_group(obj):
 
 
 def map_group_access(obj):
+    """Normalize a GroupAccessMapping row to a common audit entry dict."""
     group = _group_name(obj.group)
     access = _access_tag(obj.access)
     resource = " / ".join([part for part in (group, access) if part])
@@ -170,11 +174,11 @@ SOURCES = (
 
 def _orm_filters(source, filters):
     orm = {}
-    ts = source["timestamp_field"]
+    timestamp_field = source["timestamp_field"]
     if filters["date_from"]:
-        orm[ts + "__date__gte"] = filters["date_from"]
+        orm[timestamp_field + "__date__gte"] = filters["date_from"]
     if filters["date_to"]:
-        orm[ts + "__date__lte"] = filters["date_to"]
+        orm[timestamp_field + "__date__lte"] = filters["date_to"]
     if filters["actor"]:
         orm[source["actor_path"] + "__icontains"] = filters["actor"]
     if filters["status"]:
@@ -191,17 +195,28 @@ def build_audit_entries(filters):
         orm = _orm_filters(source, filters)
         for obj in source["model"].objects.filter(**orm):
             entries.append(source["mapper"](obj))
-    entries.sort(key=lambda entry: entry["timestamp"], reverse=True)
+    entries.sort(
+        key=lambda entry: entry["timestamp"] or datetime.datetime.min,
+        reverse=True,
+    )
     return entries
 
 
 CSV_HEADER = ["Timestamp", "Actor", "Action", "Status", "Resource", "Approver", "Reason"]
 
 
+def _csv_safe(value):
+    """Neutralize CSV/spreadsheet formula injection in a cell value."""
+    text = str(value) if value is not None else ""
+    if text and text[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + text
+    return text
+
+
 def gen_audit_logs_csv(entries):
     """Render the (already filtered) entries as a downloadable CSV response."""
     response = HttpResponse(content_type="text/csv")
-    filename = "AuditLogs-" + datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S") + ".csv"
+    filename = "AuditLogs-" + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".csv"
     response["Content-Disposition"] = 'attachment; filename="' + filename + '"'
 
     writer = csv.writer(response)
@@ -211,12 +226,12 @@ def gen_audit_logs_csv(entries):
         writer.writerow(
             [
                 timestamp.strftime("%Y-%m-%d %H:%M:%S") if timestamp else "",
-                entry["actor"],
-                entry["action"],
-                entry["status"],
-                entry["resource"],
-                entry["approver"],
-                entry["reason"],
+                _csv_safe(entry["actor"]),
+                _csv_safe(entry["action"]),
+                _csv_safe(entry["status"]),
+                _csv_safe(entry["resource"]),
+                _csv_safe(entry["approver"]),
+                _csv_safe(entry["reason"]),
             ]
         )
     return response

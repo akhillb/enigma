@@ -1,4 +1,5 @@
 import datetime
+import types
 
 from Access import audit_helper
 
@@ -45,11 +46,9 @@ def test_parse_filters_unknown_status_dropped():
 
 def test_known_statuses_is_sorted_unique():
     assert audit_helper.KNOWN_STATUSES == sorted(set(audit_helper.KNOWN_STATUSES))
-    assert "Approved" in audit_helper.KNOWN_STATUSES
-    assert "GrantFailed" in audit_helper.KNOWN_STATUSES
-
-
-import types
+    for expected in ("Approved", "Declined", "Pending", "Processing", "Revoked",
+                     "GrantFailed", "Deprecated", "Inactive"):
+        assert expected in audit_helper.KNOWN_STATUSES
 
 
 def _ns(**kwargs):
@@ -229,3 +228,27 @@ def test_gen_audit_logs_csv_handles_missing_timestamp():
     response = audit_helper.gen_audit_logs_csv([_sample_entry(timestamp=None)])
     body = response.content.decode("utf-8").splitlines()
     assert body[1].startswith(",")  # empty timestamp cell
+
+
+def test_map_user_access_decline_reason_takes_priority():
+    obj = _ns(
+        updated_on=datetime.datetime(2026, 1, 5), user_identity=None, access=None,
+        status="Declined", request_reason="want", decline_reason="denied",
+        fail_reason=None, approver_1=None,
+    )
+    assert audit_helper.map_user_access(obj)["reason"] == "denied"
+
+
+def test_map_user_access_fail_reason_over_request_reason():
+    obj = _ns(
+        updated_on=datetime.datetime(2026, 1, 5), user_identity=None, access=None,
+        status="GrantFailed", request_reason="want", decline_reason=None,
+        fail_reason="grant failed", approver_1=None,
+    )
+    assert audit_helper.map_user_access(obj)["reason"] == "grant failed"
+
+
+def test_gen_audit_logs_csv_neutralizes_formula_injection():
+    response = audit_helper.gen_audit_logs_csv([_sample_entry(reason="=cmd()")])
+    body = response.content.decode("utf-8")
+    assert "'=cmd()" in body
