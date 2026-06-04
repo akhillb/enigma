@@ -10,6 +10,7 @@ from django.contrib.auth.models import User as djangoUser
 from django.http import JsonResponse
 from django.shortcuts import render
 
+from Access import audit_helper
 from Access import views_helper
 from Access import group_helper
 from Access.accessrequest_helper import (
@@ -76,6 +77,45 @@ def show_access_history(request):
             )
         },
     )
+
+
+@login_required
+@user_admin_or_ops
+def audit_logs(request):
+    """Read-only, filterable audit log of access-lifecycle events (admin/ops only)."""
+    try:
+        filters = audit_helper.parse_filters(request.GET)
+        entries = audit_helper.build_audit_entries(filters)
+    except Exception:
+        logger.exception(
+            "Error building audit logs: %s" % (traceback.format_exc())
+        )
+        entries = []
+
+    if request.GET.get("responseType") == "csv":
+        return audit_helper.gen_audit_logs_csv(entries)
+
+    paginator_obj = Paginator(entries, audit_helper.PAGE_SIZE)
+    try:
+        page = int(request.GET.get("page", 1))
+    except (TypeError, ValueError):
+        page = 1
+    last_page = paginator_obj.num_pages
+    page = min(max(page, 1), last_page)
+    page_obj = paginator_obj.page(page)
+
+    base_params = request.GET.copy()
+    base_params.pop("page", None)
+    base_params.pop("responseType", None)
+
+    context = {
+        "entries": page_obj.object_list,
+        "current_page": page,
+        "last_page": last_page,
+        "statuses": audit_helper.KNOWN_STATUSES,
+        "base_qs": base_params.urlencode(),
+    }
+    return render(request, "EnigmaOps/auditLogs.html", context)
 
 
 @login_required
