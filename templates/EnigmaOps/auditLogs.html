@@ -4,6 +4,7 @@
   <h1 class="h4" style="margin-bottom:16px;">Audit Logs</h1>
 
   <form action="{% url 'auditLogs' %}" method="GET" class="card" style="padding:16px;margin-bottom:20px;">
+    <input type="hidden" name="submitted" value="1">
     <fieldset style="border:none;padding:0;margin:0;">
       <legend class="h6">Filters</legend>
       <div class="form-row">
@@ -73,7 +74,9 @@
         </tr>
         {% empty %}
         <tr>
-          <td colspan="7" style="text-align:center;">No audit log entries match the current filters.</td>
+          <td colspan="7" style="text-align:center;">
+            {% if submitted %}No audit log entries match the current filters.{% else %}Set your filters and click "Apply filters" to view audit logs.{% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

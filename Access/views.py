@@ -82,15 +82,22 @@ def show_access_history(request):
 @login_required
 @user_admin_or_ops
 def audit_logs(request):
-    """Read-only, filterable audit log of access-lifecycle events (admin/ops only)."""
-    try:
-        filters = audit_helper.parse_filters(request.GET)
-        entries = audit_helper.build_audit_entries(filters)
-    except Exception:
-        logger.exception(
-            "Error building audit logs: %s" % (traceback.format_exc())
-        )
-        entries = []
+    """Read-only, filterable audit log of access-lifecycle events (admin/ops only).
+
+    Results are only built once the filter form is submitted (marked by the
+    `submitted` query param); the initial page load shows an empty table.
+    """
+    submitted = bool(request.GET.get("submitted"))
+    entries = []
+    if submitted:
+        try:
+            filters = audit_helper.parse_filters(request.GET)
+            entries = audit_helper.build_audit_entries(filters)
+        except Exception:
+            logger.exception(
+                "Error building audit logs: %s" % (traceback.format_exc())
+            )
+            entries = []
 
     if request.GET.get("responseType") == "csv":
         return audit_helper.gen_audit_logs_csv(entries)
@@ -114,6 +121,7 @@ def audit_logs(request):
         "last_page": last_page,
         "statuses": audit_helper.KNOWN_STATUSES,
         "base_qs": base_params.urlencode(),
+        "submitted": submitted,
     }
     return render(request, "EnigmaOps/auditLogs.html", context)
 

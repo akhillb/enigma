@@ -30,14 +30,28 @@ def test_audit_logs_admin_renders_with_paginated_context(mocker):
     mocker.patch.object(views.audit_helper, "build_audit_entries", return_value=entries)
     render = mocker.patch.object(views, "render", return_value="RENDERED")
 
-    result = views.audit_logs(_request("page=2"))
+    result = views.audit_logs(_request("submitted=1&page=2"))
 
     assert result == "RENDERED"
     context = render.call_args.args[2]
     assert context["current_page"] == 2
     assert context["last_page"] == 2  # 30 entries / PAGE_SIZE(25) = 2 pages
     assert len(context["entries"]) == 5
+    assert context["submitted"] is True
     assert "Approved" in context["statuses"]
+
+
+def test_audit_logs_empty_until_submitted(mocker):
+    build = mocker.patch.object(views.audit_helper, "build_audit_entries",
+                                return_value=[_entry(datetime.datetime(2026, 1, 1))])
+    render = mocker.patch.object(views, "render", return_value="RENDERED")
+
+    views.audit_logs(_request())  # no `submitted` marker -> initial load
+
+    build.assert_not_called()
+    context = render.call_args.args[2]
+    assert list(context["entries"]) == []
+    assert context["submitted"] is False
 
 
 def test_audit_logs_non_admin_raises_permission_denied(mocker):
@@ -49,7 +63,7 @@ def test_audit_logs_non_admin_raises_permission_denied(mocker):
 def test_audit_logs_csv_response(mocker):
     mocker.patch.object(views.audit_helper, "build_audit_entries",
                         return_value=[_entry(datetime.datetime(2026, 1, 1))])
-    response = views.audit_logs(_request("responseType=csv"))
+    response = views.audit_logs(_request("submitted=1&responseType=csv"))
     assert response["Content-Type"] == "text/csv"
 
 
@@ -57,7 +71,7 @@ def test_audit_logs_out_of_range_page_clamps(mocker):
     mocker.patch.object(views.audit_helper, "build_audit_entries",
                         return_value=[_entry(datetime.datetime(2026, 1, 1))])
     render = mocker.patch.object(views, "render", return_value="RENDERED")
-    views.audit_logs(_request("page=999"))
+    views.audit_logs(_request("submitted=1&page=999"))
     assert render.call_args.args[2]["current_page"] == 1
 
 
@@ -65,5 +79,5 @@ def test_audit_logs_builder_error_renders_empty(mocker):
     mocker.patch.object(views.audit_helper, "build_audit_entries",
                         side_effect=Exception("boom"))
     render = mocker.patch.object(views, "render", return_value="RENDERED")
-    views.audit_logs(_request())
+    views.audit_logs(_request("submitted=1"))
     assert list(render.call_args.args[2]["entries"]) == []
