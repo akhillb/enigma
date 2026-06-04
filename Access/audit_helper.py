@@ -147,6 +147,7 @@ SOURCES = (
         "actor_path": "user_identity__user__email",
         "resource_path": "access__access_tag",
         "mapper": map_user_access,
+        "select_related": ("user_identity__user", "access", "approver_1"),
     },
     {
         "model": MembershipV2,
@@ -154,6 +155,7 @@ SOURCES = (
         "actor_path": "user__email",
         "resource_path": "group__name",
         "mapper": map_membership,
+        "select_related": ("user", "group", "approver"),
     },
     {
         "model": GroupV2,
@@ -161,6 +163,7 @@ SOURCES = (
         "actor_path": "requester__email",
         "resource_path": "name",
         "mapper": map_group,
+        "select_related": ("requester", "approver"),
     },
     {
         "model": GroupAccessMapping,
@@ -168,6 +171,7 @@ SOURCES = (
         "actor_path": "requested_by__email",
         "resource_path": "group__name",
         "mapper": map_group_access,
+        "select_related": ("requested_by", "group", "access", "approver_1"),
     },
 )
 
@@ -193,7 +197,10 @@ def build_audit_entries(filters):
     entries = []
     for source in SOURCES:
         orm = _orm_filters(source, filters)
-        for obj in source["model"].objects.filter(**orm):
+        queryset = source["model"].objects.filter(**orm).select_related(
+            *source["select_related"]
+        )
+        for obj in queryset:
             entries.append(source["mapper"](obj))
     entries.sort(
         key=lambda entry: entry["timestamp"] or datetime.datetime.min,

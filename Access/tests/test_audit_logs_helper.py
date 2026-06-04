@@ -138,15 +138,22 @@ def test_map_group_access():
     assert entry["source_type"] == "group_access"
 
 
+def _make_qs(mocker, rows):
+    """Return a MagicMock whose .select_related(...) returns rows."""
+    qs = mocker.MagicMock()
+    qs.select_related.return_value = rows
+    return qs
+
+
 def _patch_all_sources(mocker, ua=None, mem=None, grp=None, ga=None):
     mocker.patch.object(audit_helper.UserAccessMapping.objects, "filter",
-                        return_value=ua or [])
+                        return_value=_make_qs(mocker, ua or []))
     mocker.patch.object(audit_helper.MembershipV2.objects, "filter",
-                        return_value=mem or [])
+                        return_value=_make_qs(mocker, mem or []))
     mocker.patch.object(audit_helper.GroupV2.objects, "filter",
-                        return_value=grp or [])
+                        return_value=_make_qs(mocker, grp or []))
     mocker.patch.object(audit_helper.GroupAccessMapping.objects, "filter",
-                        return_value=ga or [])
+                        return_value=_make_qs(mocker, ga or []))
 
 
 def test_build_audit_entries_merges_and_sorts_desc(mocker):
@@ -169,12 +176,19 @@ def test_build_audit_entries_no_match_returns_empty(mocker):
 
 
 def test_build_audit_entries_pushes_filters_to_each_source(mocker):
+    ua_qs = mocker.MagicMock()
+    ua_qs.select_related.return_value = []
     ua_filter = mocker.patch.object(audit_helper.UserAccessMapping.objects, "filter",
-                                    return_value=[])
-    mocker.patch.object(audit_helper.MembershipV2.objects, "filter", return_value=[])
-    mocker.patch.object(audit_helper.GroupV2.objects, "filter", return_value=[])
+                                    return_value=ua_qs)
+    mocker.patch.object(audit_helper.MembershipV2.objects, "filter",
+                        return_value=mocker.MagicMock(
+                            select_related=mocker.MagicMock(return_value=[])))
+    mocker.patch.object(audit_helper.GroupV2.objects, "filter",
+                        return_value=mocker.MagicMock(
+                            select_related=mocker.MagicMock(return_value=[])))
     mocker.patch.object(audit_helper.GroupAccessMapping.objects, "filter",
-                        return_value=[])
+                        return_value=mocker.MagicMock(
+                            select_related=mocker.MagicMock(return_value=[])))
 
     filters = audit_helper.parse_filters(
         {"dateFrom": "2026-01-01", "actor": "alice", "status": "Approved",
@@ -188,6 +202,20 @@ def test_build_audit_entries_pushes_filters_to_each_source(mocker):
         status="Approved",
         access__access_tag__icontains="aws",
     )
+
+
+def test_build_audit_entries_applies_select_related(mocker):
+    qs = mocker.MagicMock()
+    qs.select_related.return_value = []
+    mocker.patch.object(audit_helper.UserAccessMapping.objects, "filter", return_value=qs)
+    mocker.patch.object(audit_helper.MembershipV2.objects, "filter",
+                        return_value=mocker.MagicMock(select_related=mocker.MagicMock(return_value=[])))
+    mocker.patch.object(audit_helper.GroupV2.objects, "filter",
+                        return_value=mocker.MagicMock(select_related=mocker.MagicMock(return_value=[])))
+    mocker.patch.object(audit_helper.GroupAccessMapping.objects, "filter",
+                        return_value=mocker.MagicMock(select_related=mocker.MagicMock(return_value=[])))
+    audit_helper.build_audit_entries(audit_helper.parse_filters({}))
+    qs.select_related.assert_called_once_with("user_identity__user", "access", "approver_1")
 
 
 def _sample_entry(**overrides):
