@@ -1,9 +1,25 @@
 {% extends 'global_layout.html' %}
 {% block content_body %}
+<style>
+  /* High-contrast filter form on the dark theme (WCAG AA: >= 4.5:1). */
+  .audit-filters legend,
+  .audit-filters label { color: #ffffff; }
+  .audit-filters .form-control {
+    background-color: #ffffff;
+    color: #212529;
+  }
+  .audit-filters .form-control::placeholder { color: #6c757d; }
+  /* Darken theme button colors so white text meets >= 4.5:1. */
+  .audit-filters .btn-primary { background-color: #1e7e34; border-color: #1e7e34; }
+  .audit-filters .btn-secondary { background-color: #565e64; border-color: #565e64; }
+  .audit-filters .btn-success { background-color: #146c43; border-color: #146c43; }
+  /* Lighten table body text for >= 4.5:1 on the dark theme rows. */
+  .audit-table tbody td { color: #e9ecef; }
+</style>
 <div class="container-fluid" style="padding:20px;">
   <h1 class="h4" style="margin-bottom:16px;">Audit Logs</h1>
 
-  <form action="{% url 'auditLogs' %}" method="GET" class="card" style="padding:16px;margin-bottom:20px;">
+  <form action="{% url 'auditLogs' %}" method="GET" class="card audit-filters" style="padding:16px;margin-bottom:20px;">
     <input type="hidden" name="submitted" value="1">
     <fieldset style="border:none;padding:0;margin:0;">
       <legend class="h6">Filters</legend>
@@ -48,7 +64,7 @@
   </form>
 
   <div class="table-responsive" aria-live="polite">
-    <table class="table table-striped table-sm">
+    <table class="table table-striped table-sm audit-table">
       <caption class="sr-only">Audit log of access-lifecycle events</caption>
       <thead>
         <tr>
